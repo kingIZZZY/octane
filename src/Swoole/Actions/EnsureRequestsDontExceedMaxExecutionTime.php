@@ -5,6 +5,7 @@ namespace Laravel\Octane\Swoole\Actions;
 use Laravel\Octane\Swoole\SwooleExtension;
 use Swoole\Http\Response;
 use Swoole\Http\Server;
+use Swoole\WebSocket\Server as WServer;
 
 class EnsureRequestsDontExceedMaxExecutionTime
 {
@@ -12,7 +13,7 @@ class EnsureRequestsDontExceedMaxExecutionTime
         protected SwooleExtension $extension,
         protected $timerTable,
         protected $maxExecutionTime,
-        protected ?Server $server = null
+        protected Server|WServer|null $server = null
     ) {
     }
 
@@ -38,13 +39,13 @@ class EnsureRequestsDontExceedMaxExecutionTime
 
             $this->timerTable->del($workerId);
 
-            if ($this->server instanceof Server && ! $this->server->exists($row['fd'])) {
+            if (($this->server instanceof Server || $this->server instanceof WServer) && ! $this->server->exists($row['fd'])) {
                 continue;
             }
 
             $this->extension->dispatchProcessSignal($row['worker_pid'], SIGKILL);
 
-            if ($this->server instanceof Server) {
+            if ($this->server instanceof Server || $this->server instanceof WServer) {
                 $response = Response::create($this->server, $row['fd']);
 
                 if ($response) {

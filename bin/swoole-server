@@ -9,6 +9,7 @@ use Laravel\Octane\Swoole\ServerStateFile;
 use Laravel\Octane\Swoole\SwooleExtension;
 use Laravel\Octane\Swoole\WorkerState;
 use Swoole\Http\Server;
+use Swoole\WebSocket\Server as WServer;
 use Swoole\Timer;
 
 ini_set('display_errors', 'stderr');
@@ -49,7 +50,7 @@ $timerTable = require __DIR__.'/createSwooleTimerTable.php';
 |
 */
 
-$server->on('start', fn (Server $server) => $bootstrap($serverState) && (new OnServerStart(
+$server->on('start', fn (Server|WServer $server) => $bootstrap($serverState) && (new OnServerStart(
     new ServerStateFile($serverStateFile),
     new SwooleExtension,
     $serverState['appName'],
@@ -91,7 +92,7 @@ $workerState->cacheTable = require __DIR__.'/createSwooleCacheTable.php';
 $workerState->timerTable = $timerTable;
 $workerState->tables = require __DIR__.'/createSwooleTables.php';
 
-$server->on('workerstart', fn (Server $server, $workerId) =>
+$server->on('workerstart', fn (Server|WServer $server, $workerId) =>
     (fn ($basePath) => (new OnWorkerStart(
         new SwooleExtension, $basePath, $serverState, $workerState
     ))($server, $workerId))($bootstrap($serverState))
@@ -142,13 +143,67 @@ $server->on('request', function ($request, $response) use ($server, $workerState
 |
 */
 
-$server->on('task', fn (Server $server, int $taskId, int $fromWorkerId, $data) =>
+$server->on('task', fn (Server|WServer $server, int $taskId, int $fromWorkerId, $data) =>
     $data === 'octane-tick'
             ? $workerState->worker->handleTick()
             : $workerState->worker->handleTask($data)
 );
 
-$server->on('finish', fn (Server $server, int $taskId, $result) => $result);
+$server->on('finish', fn (Server|WServer $server, int $taskId, $result) => $result);
+
+
+if($serverState['octaneConfig']['swoole']['enableWebSockets'] ?? false){
+
+    /*
+    |--------------------------------------------------------------------------
+    | Handle Incoming WebSocket Connections
+    |--------------------------------------------------------------------------
+    */
+    $server->on('handshake', function ($request, $response) use ($server, $workerState, $serverState) {
+        $workerState->lastRequestTime = microtime(true);
+    
+        if ($workerState->timerTable) {
+            $workerState->timerTable->set($workerState->workerId, [
+                'worker_pid' => $workerState->workerPid,
+                'time' => time(),
+                'fd' => $request->fd,
+            ]);
+        }
+    
+        $workerState->worker->handle(...$workerState->client->marshalRequest(new RequestContext([
+            'swooleRequest' => $request,
+            'swooleResponse' => $response,
+            'publicPath' => $serverState['publicPath'],
+            'octaneConfig' => $serverState['octaneConfig'],
+        ])));
+    
+        if ($workerState->timerTable) {
+            $workerState->timerTable->del($workerState->workerId);
+        }
+    });
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Handle Incoming WebSocket Messages
+    |--------------------------------------------------------------------------
+    */
+
+    $server->on('message', function (Server $server, Frame $frame) use ($workerState) {
+        $workerState->worker->handleWebSocketMessage($server, $frame);
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Handle Closed WebSocket Connections
+    |--------------------------------------------------------------------------
+    */
+
+    $server->on('close', function (Server $server, int $fd) use ($workerState) {
+        $workerState->worker->handleWebSocketDisconnect($server, $fd);
+    });
+
+}
 
 /*
 |--------------------------------------------------------------------------

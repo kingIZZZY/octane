@@ -4,7 +4,6 @@ namespace Laravel\Octane;
 
 use Exception;
 use Laravel\Octane\Swoole\WorkerState;
-use Swoole\Http\Server;
 use Swoole\Table;
 use Throwable;
 
@@ -20,7 +19,8 @@ class Octane
      */
     public function table(string $table): Table
     {
-        if (! app()->bound(Server::class)) {
+        $serverClass = app('config')->get('octane.swoole.enableWebSockets') ? 'Swoole\WebSocket\Server' : 'Swoole\Http\Server';
+        if (! app()->bound($serverClass)) {
             throw new Exception('Tables may only be accessed when using the Swoole server.');
         }
 

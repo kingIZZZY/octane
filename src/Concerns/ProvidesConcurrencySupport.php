@@ -7,7 +7,6 @@ use Laravel\Octane\SequentialTaskDispatcher;
 use Laravel\Octane\Swoole\ServerStateFile;
 use Laravel\Octane\Swoole\SwooleHttpTaskDispatcher;
 use Laravel\Octane\Swoole\SwooleTaskDispatcher;
-use Swoole\Http\Server;
 
 trait ProvidesConcurrencySupport
 {
@@ -33,10 +32,11 @@ trait ProvidesConcurrencySupport
      */
     public function tasks()
     {
+        $serverClass = app('config')->get('octane.swoole.enableWebSockets') ? 'Swoole\WebSocket\Server' : 'Swoole\Http\Server';
         return match (true) {
             app()->bound(DispatchesTasks::class) => app(DispatchesTasks::class),
-            app()->bound(Server::class) => new SwooleTaskDispatcher,
-            class_exists(Server::class) => (fn (array $serverState) => new SwooleHttpTaskDispatcher(
+            app()->bound($serverClass) => new SwooleTaskDispatcher,
+            class_exists($serverClass) => (fn (array $serverState) => new SwooleHttpTaskDispatcher(
                 $serverState['state']['host'] ?? '127.0.0.1',
                 $serverState['state']['port'] ?? '8000',
                 new SequentialTaskDispatcher

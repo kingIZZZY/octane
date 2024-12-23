@@ -12,6 +12,8 @@ use Laravel\Octane\Events\TaskReceived;
 use Laravel\Octane\Events\TaskTerminated;
 use Laravel\Octane\Events\TickReceived;
 use Laravel\Octane\Events\TickTerminated;
+use Laravel\Octane\Events\WebSocketDisconnectReceived;
+use Laravel\Octane\Events\WebSocketMessageReceived;
 use Laravel\Octane\Events\WorkerErrorOccurred;
 use Laravel\Octane\Events\WorkerStarting;
 use Laravel\Octane\Events\WorkerStopping;
@@ -240,5 +242,45 @@ class Worker implements WorkerContract
     public function terminate(): void
     {
         $this->dispatchEvent($this->app, new WorkerStopping($this->app));
+    }
+
+    /**
+     * Handle Incoming WebSocket Messages
+     */
+    public function handleWebSocketMessage(\Swoole\WebSocket\Server $server, \Swoole\WebSocket\Frame $frame)
+    {
+        \Laravel\Octane\CurrentApplication::set($sandbox = clone $this->app);
+
+        try {
+            $this->dispatchEvent($sandbox, new WebSocketMessageReceived($this->app, $sandbox, $server, $frame));
+        } catch (Throwable $e) {
+            $this->dispatchEvent($sandbox, new WorkerErrorOccurred($e, $sandbox));
+        } finally {
+            $sandbox->flush();
+
+            unset($sandbox);
+
+            \Laravel\Octane\CurrentApplication::set($this->app);
+        }
+    }
+
+    /**
+     * Handle Closed WebSocket Connections
+     */
+    public function handleWebSocketDisconnect(\Swoole\WebSocket\Server $server, int $fd)
+    {
+        \Laravel\Octane\CurrentApplication::set($sandbox = clone $this->app);
+
+        try {
+            $this->dispatchEvent($sandbox, new WebSocketDisconnectReceived($this->app, $sandbox, $server, $fd));
+        } catch (Throwable $e) {
+            $this->dispatchEvent($sandbox, new WorkerErrorOccurred($e, $sandbox));
+        } finally {
+            $sandbox->flush();
+
+            unset($sandbox);
+
+            \Laravel\Octane\CurrentApplication::set($this->app);
+        }
     }
 }

@@ -105,7 +105,7 @@ trait InteractsWithServers
         $this->output->writeln([
             '',
             '  Local: <fg=white;options=bold>'.($this->hasOption('https') && $this->option('https') ? 'https://' : 'http://').$this->getHost().':'.$this->getPort().' </>',
-            '',
+            config('octane.swoole.enableWebSockets') ? ('         <fg=white;options=bold>'.($this->hasOption('https') && $this->option('https') ? 'wss://' : 'ws://').$this->getHost().':'.$this->getPort()." </>\n") : '',
             '  <fg=yellow>Press Ctrl+C to stop the server</>',
             '',
         ]);

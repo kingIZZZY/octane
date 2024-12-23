@@ -8,7 +8,6 @@ use Laravel\Octane\Contracts\DispatchesTasks;
 use Laravel\Octane\Exceptions\TaskExceptionResult;
 use Laravel\Octane\Exceptions\TaskTimeoutException;
 use Laravel\SerializableClosure\SerializableClosure;
-use Swoole\Http\Server;
 
 class SwooleTaskDispatcher implements DispatchesTasks
 {
@@ -23,11 +22,12 @@ class SwooleTaskDispatcher implements DispatchesTasks
      */
     public function resolve(array $tasks, int $waitMilliseconds = 3000): array
     {
-        if (! app()->bound(Server::class)) {
+        $serverClass = app('config')->get('octane.swoole.enableWebSockets') ? 'Swoole\WebSocket\Server' : 'Swoole\Http\Server';
+        if (! app()->bound($serverClass)) {
             throw new InvalidArgumentException('Tasks can only be resolved within a Swoole server context / web request.');
         }
 
-        $results = app(Server::class)->taskWaitMulti(collect($tasks)->mapWithKeys(function ($task, $key) {
+        $results = app($serverClass)->taskWaitMulti(collect($tasks)->mapWithKeys(function ($task, $key) {
             return [$key => $task instanceof Closure
                             ? new SerializableClosure($task)
                             : $task, ];
@@ -61,11 +61,12 @@ class SwooleTaskDispatcher implements DispatchesTasks
      */
     public function dispatch(array $tasks): void
     {
-        if (! app()->bound(Server::class)) {
+        $serverClass = app('config')->get('octane.swoole.enableWebSockets') ? 'Swoole\WebSocket\Server' : 'Swoole\Http\Server';
+        if (! app()->bound($serverClass)) {
             throw new InvalidArgumentException('Tasks can only be dispatched within a Swoole server context / web request.');
         }
 
-        $server = app(Server::class);
+        $server = app($serverClass);
 
         collect($tasks)->each(function ($task) use ($server) {
             $server->task($task instanceof Closure ? new SerializableClosure($task) : $task);
