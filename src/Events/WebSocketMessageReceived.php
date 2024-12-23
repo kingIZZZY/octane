@@ -3,6 +3,7 @@
 namespace Laravel\Octane\Events;
 
 use Illuminate\Foundation\Application;
+use Swoole\WebSocket\Frame;
 use Swoole\WebSocket\Server;
 
 class WebSocketMessageReceived
